@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1024, initial-scale=1.0">
+  <title>タレ製造スケジュール - KimFoods</title>
+  <style>
+    :root {
+      --color-batch1-bg: #EEEDFE;
+      --color-batch1-text: #26215C;
+      --color-batch2-bg: #E1F5EE;
+      --color-batch2-text: #04342C;
+      --color-simultaneous: #FAEEDA;
+      --color-primary-text: #333;
+      --color-button-primary: #3B82F6;
+      --color-button-danger: #EF4444;
+      --color-button-success: #10B981;
+      --color-button-secondary: #6B7280;
+      --color-border: #D1D5DB;
+      --color-bg: #F9FAFB;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      color: var(--color-primary-text);
+      background: var(--color-bg);
+      font-size: 16px;
+      height: 100%;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    .screen {
+      padding: 16px 24px 32px;
+      max-width: 1024px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid var(--color-border);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+
+    header h1 {
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .current-time {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .current-time .label {
+      color: #6B7280;
+      font-size: 14px;
+    }
+
+    #current-time-display {
+      font-size: 28px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 入力エリア */
+    .input-section {
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+
+    .pattern-selector {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .pattern-btn {
+      flex: 1;
+      min-height: 52px;
+      font-size: 16px;
+      font-weight: 600;
+      border: 2px solid var(--color-border);
+      background: white;
+      color: var(--color-primary-text);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .pattern-btn.active {
+      background: var(--color-button-primary);
+      color: white;
+      border-color: var(--color-button-primary);
+    }
+
+    .form-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .form-row > label {
+      min-width: 140px;
+      font-weight: 600;
+    }
+
+    .tare-types-row {
+      gap: 32px;
+    }
+
+    .tare-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .tare-group > label {
+      font-weight: 600;
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .radio-group label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 16px;
+      border: 2px solid var(--color-border);
+      border-radius: 6px;
+      cursor: pointer;
+      min-height: 44px;
+      background: white;
+    }
+
+    .radio-group label:has(input:checked) {
+      background: var(--color-batch1-bg);
+      border-color: var(--color-batch1-text);
+      color: var(--color-batch1-text);
+      font-weight: 700;
+    }
+
+    #tare-group-2 .radio-group label:has(input:checked) {
+      background: var(--color-batch2-bg);
+      border-color: var(--color-batch2-text);
+      color: var(--color-batch2-text);
+    }
+
+    .radio-group input[type="radio"] {
+      width: 18px;
+      height: 18px;
+    }
+
+    input[type="time"] {
+      font-size: 20px;
+      padding: 8px 12px;
+      border: 2px solid var(--color-border);
+      border-radius: 6px;
+      min-height: 48px;
+      font-variant-numeric: tabular-nums;
+      background: white;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .btn {
+      min-height: 48px;
+      padding: 0 22px;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: white;
+      transition: opacity 0.15s;
+    }
+
+    .btn:active { opacity: 0.7; }
+
+    .btn-primary   { background: var(--color-button-primary); }
+    .btn-success   { background: var(--color-button-success); }
+    .btn-danger    { background: var(--color-button-danger); }
+    .btn-secondary { background: var(--color-button-secondary); }
+
+    /* スケジュール表示 */
+    .schedule-section:empty {
+      display: none;
+    }
+
+    .schedule-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .schedule-pair.single {
+      grid-template-columns: 1fr;
+      max-width: 520px;
+    }
+
+    .schedule-card {
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .schedule-header {
+      padding: 10px 16px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .schedule-header.batch1 {
+      background: var(--color-batch1-bg);
+      color: var(--color-batch1-text);
+    }
+
+    .schedule-header.batch2 {
+      background: var(--color-batch2-bg);
+      color: var(--color-batch2-text);
+    }
+
+    .schedule-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .schedule-table tr {
+      border-top: 1px solid var(--color-border);
+    }
+
+    .schedule-table tr.simultaneous {
+      background: var(--color-simultaneous);
+    }
+
+    .schedule-table tr.simultaneous .time::after {
+      content: " ●";
+      color: #B45309;
+      font-size: 14px;
+    }
+
+    .schedule-table td {
+      padding: 14px 18px;
+    }
+
+    .schedule-table td.time {
+      font-size: 24px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      width: 130px;
+      border-right: 1px solid var(--color-border);
+      color: var(--color-primary-text);
+    }
+
+    .schedule-table td.phase {
+      font-size: 18px;
+    }
+
+    /* マスター管理画面 */
+    .master-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      min-height: 48px;
+      font-size: 16px;
+      font-weight: 600;
+      background: white;
+      color: var(--color-primary-text);
+      border: 2px solid var(--color-border);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      background: var(--color-button-primary);
+      color: white;
+      border-color: var(--color-button-primary);
+    }
+
+    .master-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    .master-table th,
+    .master-table td {
+      padding: 10px;
+      border-bottom: 1px solid var(--color-border);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .master-table th {
+      background: #F3F4F6;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .master-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .master-table input[type="text"],
+    .master-table input[type="number"],
+    .master-table select {
+      width: 100%;
+      min-height: 40px;
+      font-size: 16px;
+      padding: 6px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      background: white;
+    }
+
+    .master-table .empty-row td {
+      text-align: center;
+      color: #9CA3AF;
+      padding: 24px;
+    }
+
+    .btn-small {
+      min-height: 36px;
+      padding: 6px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+    }
+
+    .btn-small.btn-danger { background: var(--color-button-danger); }
+  </style>
+</head>
+<body>
+
+<!-- メイン画面 -->
+<div id="main-screen" class="screen">
+  <header>
+    <h1>タレ製造スケジュール</h1>
+    <div class="current-time">
+      <span class="label">現在時刻</span>
+      <span id="current-time-display">--:--</span>
+    </div>
+  </header>
+
+  <section class="input-section">
+    <div class="pattern-selector">
+      <button class="pattern-btn" data-pattern="①">パターン①(1回)</button>
+      <button class="pattern-btn" data-pattern="②">パターン②(2回連続)</button>
+    </div>
+
+    <div class="form-row">
+      <label for="start-time">スタート時刻</label>
+      <input type="time" id="start-time" value="09:00">
+    </div>
+
+    <div class="form-row tare-types-row">
+      <div class="tare-group" id="tare-group-1">
+        <label>タレ種類(1回目)</label>
+        <div class="radio-group">
+          <label><input type="radio" name="tare1" value="A" checked> Aタレ</label>
+          <label><input type="radio" name="tare1" value="B"> Bタレ</label>
+          <label><input type="radio" name="tare1" value="C"> Cタレ</label>
+        </div>
+      </div>
+      <div class="tare-group" id="tare-group-2" style="display:none">
+        <label>タレ種類(2回目)</label>
+        <div class="radio-group">
+          <label><input type="radio" name="tare2" value="A" checked> Aタレ</label>
+          <label><input type="radio" name="tare2" value="B"> Bタレ</label>
+          <label><input type="radio" name="tare2" value="C"> Cタレ</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="btn-create" class="btn btn-primary">スケジュール作成</button>
+      <button id="btn-start" class="btn btn-success">製造開始</button>
+      <button id="btn-reset" class="btn btn-danger">リセット</button>
+      <button id="btn-master" class="btn btn-secondary">マスター管理画面へ</button>
+    </div>
+  </section>
+
+  <section id="schedule-section" class="schedule-section"></section>
+</div>
+
+<!-- マスター管理画面 -->
+<div id="master-screen" class="screen" style="display:none">
+  <header>
+    <h1>原材料マスター管理</h1>
+    <button id="btn-back" class="btn btn-secondary">メイン画面に戻る</button>
+  </header>
+
+  <div class="master-tabs">
+    <button class="tab-btn" data-tare="A">Aタレ</button>
+    <button class="tab-btn" data-tare="B">Bタレ</button>
+    <button class="tab-btn" data-tare="C">Cタレ</button>
+  </div>
+
+  <table class="master-table">
+    <thead>
+      <tr>
+        <th>原材料名</th>
+        <th style="width:180px">1バッチ使用量</th>
+        <th style="width:110px">単位</th>
+        <th style="width:90px"></th>
+      </tr>
+    </thead>
+    <tbody id="master-tbody"></tbody>
+  </table>
+
+  <div class="actions">
+    <button id="btn-add-row" class="btn btn-secondary">+ 行追加</button>
+    <button id="btn-save-master" class="btn btn-primary">保存</button>
+    <button id="btn-cancel-master" class="btn btn-danger">キャンセル</button>
+  </div>
+</div>
+
+<script>
+  'use strict';
+
+  // === 定数 ===
+  const PHASES = [
+    { name: '水飴点火',     offset: 0 },
+    { name: '回転釜点火',   offset: 60 },
+    { name: '出汁開始',     offset: 110 },
+    { name: 'タレ開始',     offset: 130 },
+    { name: 'タレ取り出し', offset: 210 }
+  ];
+
+  const BATCH2_START_OFFSET = 110;
+
+  const STORAGE_KEYS = {
+    pattern:   'tare_pattern',
+    startTime: 'tare_startTime',
+    tareTypes: 'tare_types',
+    schedule:  'tare_schedule'
+  };
+
+  // 原材料マスター初期値(Phase 1 はメモリ上のみ)
+  const DEFAULT_MASTER = {
+    A: [
+      { name: '醤油',   amount: 5.0, unit: 'kg' },
+      { name: '砂糖',   amount: 3.0, unit: 'kg' },
+      { name: '水飴',   amount: 2.0, unit: 'kg' }
+    ],
+    B: [
+      { name: '醤油',   amount: 4.0, unit: 'kg' },
+      { name: 'みりん', amount: 1.5, unit: 'L'  },
+      { name: '砂糖',   amount: 2.0, unit: 'kg' }
+    ],
+    C: [
+      { name: '醤油',   amount: 3.0, unit: 'kg' },
+      { name: '味噌',   amount: 2.0, unit: 'kg' },
+      { name: '砂糖',   amount: 1.5, unit: 'kg' }
+    ]
+  };
+
+  // === 状態 ===
+  let state = {
+    pattern:   '①',
+    startTime: '09:00',
+    tareTypes: ['A'],
+    schedule:  null
+  };
+
+  let master = clone(DEFAULT_MASTER);
+  let currentMasterTab = 'A';
+
+  function clone(obj) {
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  // === 時刻計算 ===
+
+  // 'HH:MM' → 分(0-1439)
+  function timeToMin(str) {
+    const [h, m] = str.split(':').map(Number);
+    return h * 60 + m;
+  }
+
+  // 分 → 'HH:MM'(日付またぎは考慮しない)
+  function minToTime(total) {
+    const h = Math.floor(total / 60) % 24;
+    const m = total % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  // バッチの工程リストを作成
+  function makeBatch(startMin) {
+    return PHASES.map(p => ({
+      name:    p.name,
+      time:    minToTime(startMin + p.offset),
+      minutes: startMin + p.offset
+    }));
+  }
+
+  // スケジュール計算
+  function calculateSchedule(startTime, pattern, tareTypes) {
+    const startMin = timeToMin(startTime);
+    const batch1   = makeBatch(startMin);
+
+    if (pattern === '①') {
+      return { pattern, tareTypes, batch1 };
+    }
+
+    const batch2 = makeBatch(startMin + BATCH2_START_OFFSET);
+    return { pattern, tareTypes, batch1, batch2 };
+  }
+
+  // === 描画 ===
+
+  function renderSchedule(sched) {
+    const section = document.getElementById('schedule-section');
+    if (!sched) {
+      section.innerHTML = '';
+      return;
+    }
+
+    if (sched.pattern === '①') {
+      section.innerHTML = `
+        <div class="schedule-pair single">
+          ${renderCard(sched.batch1, [], 'batch1', `${sched.tareTypes[0]}タレ (1回目)`)}
+        </div>
+      `;
+      return;
+    }
+
+    section.innerHTML = `
+      <div class="schedule-pair">
+        ${renderCard(sched.batch1, sched.batch2, 'batch1', `1回目 (${sched.tareTypes[0]}タレ)`)}
+        ${renderCard(sched.batch2, sched.batch1, 'batch2', `2回目 (${sched.tareTypes[1]}タレ)`)}
+      </div>
+    `;
+  }
+
+  // ownBatch と otherBatch を比較し、同時刻のセルに simultaneous クラスを付ける
+  function renderCard(ownBatch, otherBatch, headerClass, headerLabel) {
+    const otherTimes = new Set(otherBatch.map(r => r.minutes));
+    const rows = ownBatch.map(row => {
+      const simultaneous = otherTimes.has(row.minutes);
+      return `
+        <tr class="${simultaneous ? 'simultaneous' : ''}">
+          <td class="time">${row.time}</td>
+          <td class="phase">${row.name}</td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <div class="schedule-card">
+        <div class="schedule-header ${headerClass}">${headerLabel}</div>
+        <table class="schedule-table">${rows}</table>
+      </div>
+    `;
+  }
+
+  // 現在時刻表示(1分ごとに更新)
+  function updateCurrentTime() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    document.getElementById('current-time-display').textContent = `${h}:${m}`;
+  }
+
+  // === localStorage ===
+
+  function saveState() {
+    try {
+      localStorage.setItem(STORAGE_KEYS.pattern,   state.pattern);
+      localStorage.setItem(STORAGE_KEYS.startTime, state.startTime);
+      localStorage.setItem(STORAGE_KEYS.tareTypes, JSON.stringify(state.tareTypes));
+      if (state.schedule) {
+        localStorage.setItem(STORAGE_KEYS.schedule, JSON.stringify(state.schedule));
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.schedule);
+      }
+    } catch (e) {
+      console.warn('localStorage 保存に失敗:', e);
+    }
+  }
+
+  function loadState() {
+    try {
+      const pattern   = localStorage.getItem(STORAGE_KEYS.pattern);
+      const startTime = localStorage.getItem(STORAGE_KEYS.startTime);
+      const tareTypes = localStorage.getItem(STORAGE_KEYS.tareTypes);
+      const schedule  = localStorage.getItem(STORAGE_KEYS.schedule);
+
+      if (pattern)   state.pattern   = pattern;
+      if (startTime) state.startTime = startTime;
+      if (tareTypes) state.tareTypes = JSON.parse(tareTypes);
+      if (schedule)  state.schedule  = JSON.parse(schedule);
+    } catch (e) {
+      console.warn('localStorage 読み込みに失敗:', e);
+    }
+  }
+
+  function clearStorage() {
+    Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
+  }
+
+  // 状態をUIに反映
+  function applyStateToUI() {
+    document.querySelectorAll('.pattern-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.pattern === state.pattern);
+    });
+    document.getElementById('tare-group-2').style.display =
+      state.pattern === '②' ? '' : 'none';
+
+    document.getElementById('start-time').value = state.startTime;
+
+    const t1 = document.querySelector(`input[name="tare1"][value="${state.tareTypes[0] || 'A'}"]`);
+    if (t1) t1.checked = true;
+    const t2 = document.querySelector(`input[name="tare2"][value="${state.tareTypes[1] || 'A'}"]`);
+    if (t2) t2.checked = true;
+
+    renderSchedule(state.schedule);
+  }
+
+  // 入力値を state に取り込む
+  function collectInput() {
+    state.startTime = document.getElementById('start-time').value || '09:00';
+    const t1 = document.querySelector('input[name="tare1"]:checked');
+    state.tareTypes = [t1 ? t1.value : 'A'];
+    if (state.pattern === '②') {
+      const t2 = document.querySelector('input[name="tare2"]:checked');
+      state.tareTypes.push(t2 ? t2.value : 'A');
+    }
+  }
+
+  // === マスター管理画面 ===
+
+  function renderMasterTable() {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tare === currentMasterTab);
+    });
+
+    const tbody = document.getElementById('master-tbody');
+    const list = master[currentMasterTab];
+
+    if (!list || list.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="4">原材料が登録されていません。「+ 行追加」を押してください。</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = list.map((item, i) => `
+      <tr>
+        <td><input type="text"   data-field="name"   data-index="${i}" value="${escapeAttr(item.name)}"></td>
+        <td><input type="number" data-field="amount" data-index="${i}" value="${item.amount}" step="0.1" min="0"></td>
+        <td>
+          <select data-field="unit" data-index="${i}">
+            ${['g', 'kg', 'mL', 'L'].map(u =>
+              `<option value="${u}" ${item.unit === u ? 'selected' : ''}>${u}</option>`
+            ).join('')}
+          </select>
+        </td>
+        <td><button class="btn-small btn-danger" data-action="delete" data-index="${i}">削除</button></td>
+      </tr>
+    `).join('');
+  }
+
+  function escapeAttr(str) {
+    return String(str).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[c]);
+  }
+
+  // === イベント登録 ===
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadState();
+    applyStateToUI();
+    updateCurrentTime();
+    setInterval(updateCurrentTime, 60 * 1000);
+
+    // パターン切替
+    document.querySelectorAll('.pattern-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.pattern  = btn.dataset.pattern;
+        state.schedule = null;
+        applyStateToUI();
+        saveState();
+      });
+    });
+
+    // タレ種類変更(即時保存)
+    document.querySelectorAll('input[name="tare1"], input[name="tare2"]').forEach(r => {
+      r.addEventListener('change', () => {
+        collectInput();
+        saveState();
+      });
+    });
+
+    // スタート時刻変更(即時保存)
+    document.getElementById('start-time').addEventListener('change', () => {
+      state.startTime = document.getElementById('start-time').value || '09:00';
+      saveState();
+    });
+
+    // スケジュール作成
+    document.getElementById('btn-create').addEventListener('click', () => {
+      collectInput();
+      if (!state.startTime) {
+        alert('スタート時刻を入力してください');
+        return;
+      }
+      state.schedule = calculateSchedule(state.startTime, state.pattern, state.tareTypes);
+      renderSchedule(state.schedule);
+      saveState();
+    });
+
+    // 製造開始(Phase 2 で実装)
+    document.getElementById('btn-start').addEventListener('click', () => {
+      alert('「製造開始」機能は Phase 2 で実装予定です。\nGAS WebApp 連携後に製造実績と原材料出庫を自動記録します。');
+    });
+
+    // リセット
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      if (!confirm('入力と表示をすべてクリアしますか?')) return;
+      clearStorage();
+      state = {
+        pattern:   '①',
+        startTime: '09:00',
+        tareTypes: ['A'],
+        schedule:  null
+      };
+      applyStateToUI();
+    });
+
+    // マスター画面遷移
+    document.getElementById('btn-master').addEventListener('click', () => {
+      document.getElementById('main-screen').style.display = 'none';
+      document.getElementById('master-screen').style.display = '';
+      currentMasterTab = 'A';
+      renderMasterTable();
+    });
+
+    document.getElementById('btn-back').addEventListener('click', () => {
+      document.getElementById('master-screen').style.display = 'none';
+      document.getElementById('main-screen').style.display = '';
+    });
+
+    // タレ種類タブ
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentMasterTab = btn.dataset.tare;
+        renderMasterTable();
+      });
+    });
+
+    // マスター編集(input)
+    const tbody = document.getElementById('master-tbody');
+    tbody.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.index, 10);
+      const field = e.target.dataset.field;
+      if (isNaN(idx) || !field) return;
+      if (field === 'amount') {
+        master[currentMasterTab][idx].amount = parseFloat(e.target.value) || 0;
+      } else if (field === 'name') {
+        master[currentMasterTab][idx].name = e.target.value;
+      }
+    });
+
+    // マスター編集(select change)
+    tbody.addEventListener('change', (e) => {
+      if (e.target.dataset.field !== 'unit') return;
+      const idx = parseInt(e.target.dataset.index, 10);
+      master[currentMasterTab][idx].unit = e.target.value;
+    });
+
+    // 削除ボタン
+    tbody.addEventListener('click', (e) => {
+      if (e.target.dataset.action !== 'delete') return;
+      const idx = parseInt(e.target.dataset.index, 10);
+      master[currentMasterTab].splice(idx, 1);
+      renderMasterTable();
+    });
+
+    // 行追加
+    document.getElementById('btn-add-row').addEventListener('click', () => {
+      master[currentMasterTab].push({ name: '', amount: 0, unit: 'kg' });
+      renderMasterTable();
+    });
+
+    // マスター保存(Phase 2 で GAS 連携)
+    document.getElementById('btn-save-master').addEventListener('click', () => {
+      alert('「保存」機能は Phase 2 で実装予定です。\n現在はメモリ上にのみ保持されています(画面を閉じると失われます)。');
+    });
+
+    // マスターキャンセル
+    document.getElementById('btn-cancel-master').addEventListener('click', () => {
+      if (!confirm('変更を破棄して初期値に戻しますか?')) return;
+      master = clone(DEFAULT_MASTER);
+      renderMasterTable();
+    });
+  });
+</script>
+
+</body>
+</html>
