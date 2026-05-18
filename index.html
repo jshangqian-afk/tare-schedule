@@ -470,24 +470,8 @@
     schedule:  'tare_schedule'
   };
 
-  // 原材料マスター初期値(Phase 1 はメモリ上のみ)
-  const DEFAULT_MASTER = {
-    A: [
-      { name: '醤油',   amount: 5.0, unit: 'kg' },
-      { name: '砂糖',   amount: 3.0, unit: 'kg' },
-      { name: '水飴',   amount: 2.0, unit: 'kg' }
-    ],
-    B: [
-      { name: '醤油',   amount: 4.0, unit: 'kg' },
-      { name: 'みりん', amount: 1.5, unit: 'L'  },
-      { name: '砂糖',   amount: 2.0, unit: 'kg' }
-    ],
-    C: [
-      { name: '醤油',   amount: 3.0, unit: 'kg' },
-      { name: '味噌',   amount: 2.0, unit: 'kg' },
-      { name: '砂糖',   amount: 1.5, unit: 'kg' }
-    ]
-  };
+  // GAS WebApp URL (Phase 2)
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbz61IhIdwaO_cHSaZAh1yiEf2AilOncis9_o66GaGhNt9e72OCqSUpM7uNvg8qCZAKsuA/exec';
 
   // === 状態 ===
   let state = {
@@ -497,11 +481,36 @@
     schedule:  null
   };
 
-  let master = clone(DEFAULT_MASTER);
+  // 原材料マスター(GAS から取得)
+  let master = { A: [], B: [], C: [] };
+  let masterLoaded = false;
   let currentMasterTab = 'A';
 
   function clone(obj) {
     return JSON.parse(JSON.stringify(obj));
+  }
+
+  // === GAS API ===
+
+  async function apiGet(action, params) {
+    const url = new URL(GAS_URL);
+    url.searchParams.set('action', action);
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    }
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }
+
+  async function apiPost(body) {
+    // Content-Type を指定しない(text/plain 扱いでプリフライト回避)
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
   }
 
   // === 時刻計算 ===
@@ -699,6 +708,25 @@
     })[c]);
   }
 
+  // GAS からマスターを取得して画面を更新
+  async function loadMasterFromGas() {
+    const tbody = document.getElementById('master-tbody');
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="4">読み込み中...</td></tr>`;
+    try {
+      const json = await apiGet('getMaster');
+      if (!json.success) throw new Error(json.error || '取得に失敗しました');
+      master = {
+        A: Array.isArray(json.data && json.data.A) ? json.data.A : [],
+        B: Array.isArray(json.data && json.data.B) ? json.data.B : [],
+        C: Array.isArray(json.data && json.data.C) ? json.data.C : []
+      };
+      masterLoaded = true;
+      renderMasterTable();
+    } catch (e) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="4">取得失敗: ${escapeAttr(e.message)}</td></tr>`;
+    }
+  }
+
   // === イベント登録 ===
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -743,9 +771,34 @@
       saveState();
     });
 
-    // 製造開始(Phase 2 で実装)
-    document.getElementById('btn-start').addEventListener('click', () => {
-      alert('「製造開始」機能は Phase 2 で実装予定です。\nGAS WebApp 連携後に製造実績と原材料出庫を自動記録します。');
+    // 製造開始(GAS に送信)
+    document.getElementById('btn-start').addEventListener('click', async () => {
+      collectInput();
+      if (!state.schedule) {
+        alert('先に「スケジュール作成」を押してください。');
+        return;
+      }
+      if (!confirm('製造開始を記録しますか?\nスプレッドシートに製造実績と原材料出庫が追記されます。')) return;
+
+      const btn = document.getElementById('btn-start');
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '送信中...';
+      try {
+        const json = await apiPost({
+          action:    'saveProduction',
+          pattern:   state.pattern,
+          startTime: state.startTime,
+          tareTypes: state.tareTypes
+        });
+        if (!json.success) throw new Error(json.error || '保存に失敗しました');
+        alert('製造開始を記録しました\n製造ID: ' + (json.productionIds || []).join(', '));
+      } catch (e) {
+        alert('送信失敗: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
     });
 
     // リセット
@@ -761,12 +814,16 @@
       applyStateToUI();
     });
 
-    // マスター画面遷移
-    document.getElementById('btn-master').addEventListener('click', () => {
+    // マスター画面遷移(初回のみ GAS から取得)
+    document.getElementById('btn-master').addEventListener('click', async () => {
       document.getElementById('main-screen').style.display = 'none';
       document.getElementById('master-screen').style.display = '';
       currentMasterTab = 'A';
-      renderMasterTable();
+      if (!masterLoaded) {
+        await loadMasterFromGas();
+      } else {
+        renderMasterTable();
+      }
     });
 
     document.getElementById('btn-back').addEventListener('click', () => {
@@ -816,16 +873,38 @@
       renderMasterTable();
     });
 
-    // マスター保存(Phase 2 で GAS 連携)
-    document.getElementById('btn-save-master').addEventListener('click', () => {
-      alert('「保存」機能は Phase 2 で実装予定です。\n現在はメモリ上にのみ保持されています(画面を閉じると失われます)。');
+    // マスター保存(現在のタブのみ GAS に送信)
+    document.getElementById('btn-save-master').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-save-master');
+      const tareType = currentMasterTab;
+      const ingredients = (master[tareType] || [])
+        .filter(i => i.name && String(i.name).trim() !== '');
+
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = '保存中...';
+      try {
+        const json = await apiPost({
+          action:      'saveMaster',
+          tareType:    tareType,
+          ingredients: ingredients
+        });
+        if (!json.success) throw new Error(json.error || '保存に失敗しました');
+        // 保存後は GAS の値を真として再読込
+        master[tareType] = clone(ingredients);
+        alert(tareType + 'タレのマスターを保存しました(' + (json.count != null ? json.count : ingredients.length) + ' 件)');
+      } catch (e) {
+        alert('保存失敗: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
     });
 
-    // マスターキャンセル
-    document.getElementById('btn-cancel-master').addEventListener('click', () => {
-      if (!confirm('変更を破棄して初期値に戻しますか?')) return;
-      master = clone(DEFAULT_MASTER);
-      renderMasterTable();
+    // マスターキャンセル(GAS から再取得して変更を破棄)
+    document.getElementById('btn-cancel-master').addEventListener('click', async () => {
+      if (!confirm('変更を破棄して最新のデータを再取得しますか?')) return;
+      await loadMasterFromGas();
     });
   });
 </script>
