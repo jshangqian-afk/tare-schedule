@@ -80,7 +80,48 @@ function addMinutesToTime(timeStr, minutes) {
   return String(nh).padStart(2, '0') + ':' + String(nm).padStart(2, '0');
 }
 
+// === 重複排除 ===
+
+/**
+ * [{ name, amount, unit }, ...] を原材料名で重複排除(最初の1件を残す)。
+ * 原材料マスターが二重登録されていても出庫・集計が2倍にならないようにする防御策。
+ */
+function dedupeByName(list) {
+  const seen = {};
+  const out = [];
+  (list || []).forEach(item => {
+    const key = String(item.name);
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    out.push(item);
+  });
+  return out;
+}
+
 // === 製造ID採番 ===
+
+/**
+ * 指定日の製造IDの現在の最大連番と日付プレフィックスを返す。
+ * 複数バッチ採番時に同じIDを振らないよう、呼び出し側で連番を加算して使う。
+ */
+function peekMaxProductionSeq(productionDate) {
+  const datePrefix = Utilities.formatDate(productionDate, TIMEZONE, 'yyyyMMdd');
+  const sheet = getSheet('製造実績');
+  const lastRow = sheet.getLastRow();
+
+  let maxSeq = 0;
+  if (lastRow >= 2) {
+    const ids = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+    ids.forEach(row => {
+      const id = String(row[0] || '');
+      if (id.startsWith(datePrefix + '-')) {
+        const seq = parseInt(id.substring(9), 10);
+        if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+      }
+    });
+  }
+  return { prefix: datePrefix, maxSeq: maxSeq };
+}
 
 /**
  * 'YYYYMMDD-NNN' 形式の製造IDを発番。

@@ -63,6 +63,9 @@ function getMaster() {
     });
   });
 
+  // マスターに重複行があっても1件に正規化して返す(防御策)
+  Object.keys(data).forEach(k => { data[k] = dedupeByName(data[k]); });
+
   return successResponse({ data: data });
 }
 
@@ -164,10 +167,14 @@ function saveProduction(body) {
     });
   }
 
-  // 製造ID採番(各バッチごと)
+  // 製造ID採番(各バッチごと)。
+  // 基準連番を一度だけ取得し、バッチ順に +1 ずつ振る。
+  // (以前は各バッチで都度最大連番を読んでいたため、未書き込みの状態では
+  //  複数バッチに同じIDが振られていた。連番方式で重複を防ぐ)
   const productionIds = [];
-  batches.forEach(b => {
-    b.productionId = generateProductionId(prodDateObj);
+  const idInfo = peekMaxProductionSeq(prodDateObj);
+  batches.forEach((b, i) => {
+    b.productionId = idInfo.prefix + '-' + String(idInfo.maxSeq + i + 1).padStart(3, '0');
     productionIds.push(b.productionId);
   });
 
@@ -230,6 +237,9 @@ function readMasterMap() {
       unit: String(unit || '')
     });
   });
+
+  // マスターに重複行があっても出庫が2倍にならないよう、名前で重複排除(防御策)
+  Object.keys(result).forEach(k => { result[k] = dedupeByName(result[k]); });
   return result;
 }
 
@@ -244,6 +254,8 @@ function readMasterMap() {
  */
 function updateAggregate(sheetName, keyValue, tareType, ingredients) {
   const sheet = getSheet(sheetName);
+  // 期間キー("2026-06"等)が日付に自動変換されないよう、A列をテキスト書式に固定
+  sheet.getRange('A:A').setNumberFormat('@');
   const lastRow = sheet.getLastRow();
   const data = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, 6).getValues() : [];
 
@@ -293,17 +305,23 @@ function getHistory(params) {
   if (lastRow < 2) return successResponse({ data: [] });
 
   const rows = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
-  let filtered = rows;
 
+  // 期間キーが Date 型に化けていても 'yyyy-MM'/'yyyy' に正規化して比較する
+  const keyOf = v => {
+    if (v instanceof Date) return Utilities.formatDate(v, TIMEZONE, 'yyyy-MM');
+    return String(v);
+  };
+
+  let filtered = rows;
   if (year && month) {
     const yearMonth = year + '-' + String(month).padStart(2, '0');
-    filtered = rows.filter(r => String(r[0]) === yearMonth);
+    filtered = rows.filter(r => keyOf(r[0]) === yearMonth);
   } else if (year) {
-    filtered = rows.filter(r => String(r[0]).startsWith(year));
+    filtered = rows.filter(r => keyOf(r[0]).startsWith(year));
   }
 
   const data = filtered.map(r => ({
-    yearMonth:    String(r[0]),
+    yearMonth:    keyOf(r[0]),
     tareType:     r[1],
     count:        Number(r[2]) || 0,
     ingredient:   String(r[3]),
