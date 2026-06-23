@@ -168,7 +168,8 @@
       height: 18px;
     }
 
-    input[type="time"] {
+    input[type="time"],
+    input[type="date"] {
       font-size: 20px;
       padding: 8px 12px;
       border: 2px solid var(--color-border);
@@ -383,6 +384,11 @@
     </div>
 
     <div class="form-row">
+      <label for="production-date">製造日</label>
+      <input type="date" id="production-date">
+    </div>
+
+    <div class="form-row">
       <label for="start-time">スタート時刻</label>
       <input type="time" id="start-time" value="09:00">
     </div>
@@ -429,6 +435,17 @@
     <button class="tab-btn" data-tare="B">Bタレ</button>
     <button class="tab-btn" data-tare="C">Cタレ</button>
   </div>
+
+  <!-- 単位の入力候補(自由入力も可) -->
+  <datalist id="unit-options">
+    <option value="g"></option>
+    <option value="kg"></option>
+    <option value="mL"></option>
+    <option value="L"></option>
+    <option value="個"></option>
+    <option value="本"></option>
+    <option value="袋"></option>
+  </datalist>
 
   <table class="master-table">
     <thead>
@@ -478,8 +495,15 @@
     pattern:   '①',
     startTime: '09:00',
     tareTypes: ['A'],
-    schedule:  null
+    schedule:  null,
+    productionDate: ''   // 製造日 'yyyy-MM-dd'(既定は当日。過去日付の記録に対応)
   };
+
+  // 今日の日付を 'yyyy-MM-dd' で返す
+  function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
 
   // 原材料マスター(GAS から取得)
   let master = { A: [], B: [], C: [] };
@@ -663,6 +687,7 @@
   // 入力値を state に取り込む
   function collectInput() {
     state.startTime = document.getElementById('start-time').value || '09:00';
+    state.productionDate = document.getElementById('production-date').value || todayStr();
     const t1 = document.querySelector('input[name="tare1"]:checked');
     state.tareTypes = [t1 ? t1.value : 'A'];
     if (state.pattern === '②') {
@@ -691,11 +716,8 @@
         <td><input type="text"   data-field="name"   data-index="${i}" value="${escapeAttr(item.name)}"></td>
         <td><input type="number" data-field="amount" data-index="${i}" value="${item.amount}" step="0.1" min="0"></td>
         <td>
-          <select data-field="unit" data-index="${i}">
-            ${['g', 'kg', 'mL', 'L'].map(u =>
-              `<option value="${u}" ${item.unit === u ? 'selected' : ''}>${u}</option>`
-            ).join('')}
-          </select>
+          <input type="text" list="unit-options" data-field="unit" data-index="${i}"
+                 value="${escapeAttr(item.unit)}" placeholder="例: kg / 袋">
         </td>
         <td><button class="btn-small btn-danger" data-action="delete" data-index="${i}">削除</button></td>
       </tr>
@@ -734,6 +756,13 @@
     applyStateToUI();
     updateCurrentTime();
     setInterval(updateCurrentTime, 60 * 1000);
+
+    // 製造日は毎回「当日」を初期値にし、未来日は選べないようにする
+    // (過去日付は手動で選択して記録可能)
+    const dateInput = document.getElementById('production-date');
+    dateInput.max = todayStr();
+    dateInput.value = todayStr();
+    state.productionDate = dateInput.value;
 
     // パターン切替
     document.querySelectorAll('.pattern-btn').forEach(btn => {
@@ -778,7 +807,10 @@
         alert('先に「スケジュール作成」を押してください。');
         return;
       }
-      if (!confirm('製造開始を記録しますか?\nスプレッドシートに製造実績と原材料出庫が追記されます。')) return;
+      const dateLabel = state.productionDate === todayStr()
+        ? state.productionDate + '(本日)'
+        : state.productionDate + '(過去日付)';
+      if (!confirm('製造開始を記録しますか?\n製造日: ' + dateLabel + '\nスプレッドシートに製造実績と原材料出庫が追記されます。')) return;
 
       const btn = document.getElementById('btn-start');
       const orig = btn.textContent;
@@ -787,6 +819,7 @@
       try {
         const json = await apiPost({
           action:    'saveProduction',
+          productionDate: state.productionDate,
           pattern:   state.pattern,
           startTime: state.startTime,
           tareTypes: state.tareTypes
@@ -809,8 +842,12 @@
         pattern:   '①',
         startTime: '09:00',
         tareTypes: ['A'],
-        schedule:  null
+        schedule:  null,
+        productionDate: todayStr()
       };
+      const dateInput = document.getElementById('production-date');
+      dateInput.max = todayStr();
+      dateInput.value = todayStr();
       applyStateToUI();
     });
 
@@ -849,14 +886,10 @@
         master[currentMasterTab][idx].amount = parseFloat(e.target.value) || 0;
       } else if (field === 'name') {
         master[currentMasterTab][idx].name = e.target.value;
+      } else if (field === 'unit') {
+        // 単位は自由入力(プリセット候補は datalist で補完)
+        master[currentMasterTab][idx].unit = e.target.value;
       }
-    });
-
-    // マスター編集(select change)
-    tbody.addEventListener('change', (e) => {
-      if (e.target.dataset.field !== 'unit') return;
-      const idx = parseInt(e.target.dataset.index, 10);
-      master[currentMasterTab][idx].unit = e.target.value;
     });
 
     // 削除ボタン

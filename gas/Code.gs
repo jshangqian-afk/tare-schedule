@@ -135,8 +135,13 @@ function saveProduction(body) {
   }
 
   const now = new Date();
-  const productionDate = formatDate(now);
   const timestamp = formatTimestamp(now);
+
+  // 製造日: body.productionDate('yyyy-MM-dd') があればその日付を、無ければ当日を使う。
+  // 過去日付の記録に対応。製造ID・月次/年次集計のキーもこの日付に揃える。
+  // 一方 timestamp(記録日時) は実際に記録した現在時刻のまま残す。
+  const prodDateObj = parseProductionDate(body.productionDate, now);
+  const productionDate = formatDate(prodDateObj);
 
   // 全マスターを一度取得(出庫処理で使う)
   const masterAll = readMasterMap();
@@ -162,7 +167,7 @@ function saveProduction(body) {
   // 製造ID採番(各バッチごと)
   const productionIds = [];
   batches.forEach(b => {
-    b.productionId = generateProductionId(now);
+    b.productionId = generateProductionId(prodDateObj);
     productionIds.push(b.productionId);
   });
 
@@ -199,8 +204,8 @@ function saveProduction(body) {
     dispatchSheet.getRange(dispatchSheet.getLastRow() + 1, 1, dispatchRows.length, 7)
       .setValues(dispatchRows);
 
-    updateAggregate('月次集計', formatYearMonth(now), b.tareType, ingredients);
-    updateAggregate('年次集計', formatYear(now), b.tareType, ingredients);
+    updateAggregate('月次集計', formatYearMonth(prodDateObj), b.tareType, ingredients);
+    updateAggregate('年次集計', formatYear(prodDateObj), b.tareType, ingredients);
   });
 
   return successResponse({ productionIds: productionIds });

@@ -60,6 +60,17 @@ function formatYear(date) {
   return Utilities.formatDate(date, TIMEZONE, 'yyyy');
 }
 
+/**
+ * 'yyyy-MM-dd' 文字列を Date(正午, スクリプトTZ) に変換する。
+ * 過去日付の記録に対応。未指定・不正な形式の場合は fallback(通常は現在時刻) を返す。
+ * 正午に固定するのは、タイムゾーン差による日付境界のズレを防ぐため。
+ */
+function parseProductionDate(str, fallback) {
+  if (!str || !/^\d{4}-\d{2}-\d{2}$/.test(String(str))) return fallback;
+  const parts = String(str).split('-').map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+}
+
 /** 'HH:MM' に分を加算して 'HH:MM' で返す(日付またぎは考慮しない) */
 function addMinutesToTime(timeStr, minutes) {
   const [h, m] = String(timeStr).split(':').map(Number);
