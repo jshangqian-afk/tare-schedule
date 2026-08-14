@@ -317,7 +317,7 @@
 
     .master-table th,
     .master-table td {
-      padding: 10px;
+      padding: 8px 6px;
       border-bottom: 1px solid var(--color-border);
       text-align: left;
       vertical-align: middle;
@@ -326,10 +326,11 @@
     .master-table th {
       background: #F3F4F6;
       font-weight: 700;
-      font-size: 14px;
+      font-size: 13px;
+      line-height: 1.3;
     }
 
-    .master-table tr:last-child td {
+    .master-table tbody tr:last-child td {
       border-bottom: none;
     }
 
@@ -339,7 +340,7 @@
       width: 100%;
       min-height: 40px;
       font-size: 16px;
-      padding: 6px 10px;
+      padding: 6px 8px;
       border: 1px solid var(--color-border);
       border-radius: 4px;
       background: white;
@@ -349,6 +350,104 @@
       text-align: center;
       color: #9CA3AF;
       padding: 24px;
+    }
+
+    /* 原価まわり */
+    .master-table th.num,
+    .master-table td.num {
+      text-align: right;
+    }
+
+    .master-table .cost {
+      font-size: 17px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .master-table .cost .unit-price {
+      display: block;
+      font-size: 11px;
+      font-weight: 400;
+      color: #6B7280;
+    }
+
+    .master-table .cost.warn {
+      font-size: 12px;
+      font-weight: 600;
+      color: #B45309;
+      white-space: normal;
+    }
+
+    .master-table tfoot td {
+      background: #F3F4F6;
+      border-top: 2px solid var(--color-border);
+      border-bottom: none;
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .master-table tfoot .total-value {
+      font-size: 22px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .cost-note {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      font-weight: 400;
+      color: #B45309;
+    }
+
+    .master-hint {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #6B7280;
+      margin-bottom: 10px;
+    }
+
+    /* メイン画面の原価サマリー */
+    .cost-summary {
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 14px 20px;
+      margin-top: 16px;
+      max-width: 520px;
+    }
+
+    .cost-summary h2 {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    .cost-summary table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .cost-summary td {
+      padding: 6px 0;
+      font-size: 16px;
+    }
+
+    .cost-summary td.amount {
+      text-align: right;
+      font-size: 18px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cost-summary tr.total td {
+      border-top: 2px solid var(--color-border);
+      padding-top: 10px;
+      font-size: 18px;
+    }
+
+    .cost-summary tr.total td.amount {
+      font-size: 24px;
     }
 
     .btn-small {
@@ -421,6 +520,8 @@
   </section>
 
   <section id="schedule-section" class="schedule-section"></section>
+
+  <section id="cost-summary" class="cost-summary" style="display:none"></section>
 </div>
 
 <!-- マスター管理画面 -->
@@ -445,18 +546,33 @@
     <option value="個"></option>
     <option value="本"></option>
     <option value="袋"></option>
+    <option value="ポリ"></option>
+    <option value="缶"></option>
+    <option value="箱"></option>
+    <option value="ケース"></option>
   </datalist>
+
+  <p class="master-hint">
+    <strong>入荷量 / 入荷単位 / 入荷金額</strong>には、仕入れたときの状態を<strong>税抜</strong>で入力してください
+    (例: 日本酒 1 ポリ = 3,200円 / 昆布だし 1 kg = 850円)。<br>
+    1バッチ使用量から <em>使用量 ÷ 入荷量 × 入荷金額</em> で原価を自動計算します。入荷単位が空欄のときは使用量と同じ単位とみなします。
+  </p>
 
   <table class="master-table">
     <thead>
       <tr>
         <th>原材料名</th>
-        <th style="width:180px">1バッチ使用量</th>
-        <th style="width:110px">単位</th>
-        <th style="width:90px"></th>
+        <th style="width:96px">1バッチ<br>使用量</th>
+        <th style="width:84px">単位</th>
+        <th style="width:90px">入荷量</th>
+        <th style="width:84px">入荷単位</th>
+        <th style="width:110px">入荷金額<br>(税抜・円)</th>
+        <th class="num" style="width:120px">原価(税抜)</th>
+        <th style="width:76px"></th>
       </tr>
     </thead>
     <tbody id="master-tbody"></tbody>
+    <tfoot id="master-tfoot"></tfoot>
   </table>
 
   <div class="actions">
@@ -512,6 +628,71 @@
 
   function clone(obj) {
     return JSON.parse(JSON.stringify(obj));
+  }
+
+  // === 原価計算 ===
+
+  // 単位表記の揺れ(全角・大文字小文字・前後空白)を吸収する
+  function normUnit(u) {
+    return String(u || '')
+      .replace(/[Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+      .trim()
+      .toLowerCase();
+  }
+
+  // 重さ・容量の換算表(基準: g / mL)
+  const UNIT_BASE = {
+    g:  { base: 'weight', factor: 1 },
+    kg: { base: 'weight', factor: 1000 },
+    ml: { base: 'volume', factor: 1 },
+    cc: { base: 'volume', factor: 1 },
+    l:  { base: 'volume', factor: 1000 }
+  };
+
+  // 使用量の単位 → 入荷単位 への換算係数。換算できない組み合わせは null
+  function unitFactor(useUnit, buyUnit) {
+    const a = normUnit(useUnit);
+    const b = normUnit(buyUnit) || a;   // 入荷単位が空欄なら使用量と同じ単位とみなす
+    if (a === b) return 1;
+    const ua = UNIT_BASE[a];
+    const ub = UNIT_BASE[b];
+    if (!ua || !ub || ua.base !== ub.base) return null;
+    return ua.factor / ub.factor;
+  }
+
+  // 表示用の入荷単位ラベル(空欄なら使用量の単位)
+  function buyUnitLabel(item) {
+    return String(item.purchaseUnit || item.unit || '').trim() || '単位';
+  }
+
+  // 原材料1件の1バッチ原価(税抜)
+  //   原価 = 使用量(入荷単位に換算) ÷ 入荷量 × 入荷金額
+  // 戻り値: { cost, unitPrice } または { error: '未入力' | '単位不一致' }
+  function calcCost(item) {
+    const qty   = Number(item.purchaseQty) || 0;
+    const price = Number(item.purchasePrice) || 0;
+    if (qty <= 0 || price <= 0) return { error: '未入力' };
+    const factor = unitFactor(item.unit, item.purchaseUnit);
+    if (factor === null) return { error: '単位不一致' };
+    const used = (Number(item.amount) || 0) * factor;
+    return { cost: used / qty * price, unitPrice: price / qty };
+  }
+
+  // タレ1バッチ分の原価合計。計算できなかった件数も返す
+  function calcTotalCost(list) {
+    let total = 0, missing = 0, mismatch = 0;
+    (list || []).forEach(item => {
+      if (!item.name || !String(item.name).trim()) return;
+      const r = calcCost(item);
+      if (r.error === '未入力') missing++;
+      else if (r.error === '単位不一致') mismatch++;
+      else total += r.cost;
+    });
+    return { total: total, missing: missing, mismatch: mismatch };
+  }
+
+  function formatYen(n) {
+    return '¥' + Math.round(n).toLocaleString('ja-JP');
   }
 
   // === GAS API ===
@@ -578,6 +759,7 @@
 
   function renderSchedule(sched) {
     const section = document.getElementById('schedule-section');
+    renderCostSummary(sched);
     if (!sched) {
       section.innerHTML = '';
       return;
@@ -619,6 +801,38 @@
         <table class="schedule-table">${rows}</table>
       </div>
     `;
+  }
+
+  // メイン画面: 表示中のスケジュールに対する原材料費(税抜)を表示
+  function renderCostSummary(sched) {
+    const box = document.getElementById('cost-summary');
+    if (!box) return;
+    if (!sched || !masterLoaded) {
+      box.style.display = 'none';
+      box.innerHTML = '';
+      return;
+    }
+
+    const labels = sched.pattern === '①' ? ['1回目'] : ['1回目', '2回目'];
+    let total = 0;
+    let hasNote = false;
+    const rows = labels.map((label, i) => {
+      const type = sched.tareTypes[i] || 'A';
+      const sum  = calcTotalCost(master[type]);
+      total += sum.total;
+      if (sum.missing || sum.mismatch) hasNote = true;
+      return `<tr><td>${label}(${escapeAttr(type)}タレ)</td><td class="amount">${formatYen(sum.total)}</td></tr>`;
+    }).join('');
+
+    box.innerHTML = `
+      <h2>原材料費(税抜)</h2>
+      <table>
+        ${rows}
+        <tr class="total"><td>合計</td><td class="amount">${formatYen(total)}</td></tr>
+      </table>
+      ${hasNote ? '<span class="cost-note">※ 入荷情報が未入力、または単位を換算できない原材料は含んでいません(マスター管理画面で確認してください)</span>' : ''}
+    `;
+    box.style.display = '';
   }
 
   // 現在時刻表示(1分ごとに更新)
@@ -707,7 +921,8 @@
     const list = master[currentMasterTab];
 
     if (!list || list.length === 0) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="4">原材料が登録されていません。「+ 行追加」を押してください。</td></tr>`;
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="8">原材料が登録されていません。「+ 行追加」を押してください。</td></tr>`;
+      renderMasterFooter();
       return;
     }
 
@@ -717,11 +932,66 @@
         <td><input type="number" data-field="amount" data-index="${i}" value="${item.amount}" step="0.1" min="0"></td>
         <td>
           <input type="text" list="unit-options" data-field="unit" data-index="${i}"
-                 value="${escapeAttr(item.unit)}" placeholder="例: kg / 袋">
+                 value="${escapeAttr(item.unit)}" placeholder="kg">
         </td>
+        <td><input type="number" data-field="purchaseQty" data-index="${i}"
+                   value="${item.purchaseQty || ''}" step="0.1" min="0" placeholder="1"></td>
+        <td>
+          <input type="text" list="unit-options" data-field="purchaseUnit" data-index="${i}"
+                 value="${escapeAttr(item.purchaseUnit || '')}" placeholder="${escapeAttr(item.unit || '単位')}">
+        </td>
+        <td><input type="number" data-field="purchasePrice" data-index="${i}"
+                   value="${item.purchasePrice || ''}" step="1" min="0" placeholder="0"></td>
+        <td class="num" data-cost-cell>${costCellHtml(item)}</td>
         <td><button class="btn-small btn-danger" data-action="delete" data-index="${i}">削除</button></td>
       </tr>
     `).join('');
+
+    renderMasterFooter();
+  }
+
+  // 原価セル1つ分のHTML
+  function costCellHtml(item) {
+    const r = calcCost(item);
+    if (r.error === '未入力')     return `<span class="cost warn">入荷情報が未入力</span>`;
+    if (r.error === '単位不一致') return `<span class="cost warn">単位を換算できません</span>`;
+    return `<span class="cost">${formatYen(r.cost)}` +
+           `<span class="unit-price">${formatYen(r.unitPrice)} / ${escapeAttr(buyUnitLabel(item))}</span></span>`;
+  }
+
+  // マスター表のフッター(1バッチ原価合計)を描画
+  function renderMasterFooter() {
+    const tfoot = document.getElementById('master-tfoot');
+    const sum = calcTotalCost(master[currentMasterTab]);
+
+    const notes = [];
+    if (sum.missing)  notes.push(`入荷情報が未入力 ${sum.missing}件`);
+    if (sum.mismatch) notes.push(`単位を換算できない行 ${sum.mismatch}件`);
+
+    tfoot.innerHTML = `
+      <tr>
+        <td colspan="6">
+          ${currentMasterTab}タレ 1バッチの原価合計(税抜)
+          ${notes.length ? `<span class="cost-note">※ ${notes.join(' / ')} は含んでいません</span>` : ''}
+        </td>
+        <td class="num total-value">${formatYen(sum.total)}</td>
+        <td></td>
+      </tr>
+    `;
+  }
+
+  // 入力中の focus を壊さないよう、原価セルと合計だけを再計算する
+  function refreshCosts() {
+    const list = master[currentMasterTab] || [];
+    document.querySelectorAll('#master-tbody tr').forEach((tr, i) => {
+      const item = list[i];
+      if (!item) return;
+      const cell = tr.querySelector('[data-cost-cell]');
+      if (cell) cell.innerHTML = costCellHtml(item);
+      const buyUnitInput = tr.querySelector('input[data-field="purchaseUnit"]');
+      if (buyUnitInput) buyUnitInput.placeholder = String(item.unit || '単位');
+    });
+    renderMasterFooter();
   }
 
   function escapeAttr(str) {
@@ -730,22 +1000,42 @@
     })[c]);
   }
 
-  // GAS からマスターを取得して画面を更新
-  async function loadMasterFromGas() {
+  // GAS のレスポンスを、原価計算に必要な項目が必ず揃った形に正規化する
+  function normalizeIngredients(arr) {
+    return (Array.isArray(arr) ? arr : []).map(it => ({
+      name:          String(it.name || ''),
+      amount:        Number(it.amount) || 0,
+      unit:          String(it.unit || ''),
+      purchaseQty:   Number(it.purchaseQty) || 0,
+      purchaseUnit:  String(it.purchaseUnit || ''),
+      purchasePrice: Number(it.purchasePrice) || 0
+    }));
+  }
+
+  // GAS からマスターを取得して画面を更新。
+  // silent = true のときはマスター表を触らず、原価表示用に裏で読み込むだけ。
+  async function loadMasterFromGas(silent) {
     const tbody = document.getElementById('master-tbody');
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="4">読み込み中...</td></tr>`;
+    if (!silent) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="8">読み込み中...</td></tr>`;
+    }
     try {
       const json = await apiGet('getMaster');
       if (!json.success) throw new Error(json.error || '取得に失敗しました');
       master = {
-        A: Array.isArray(json.data && json.data.A) ? json.data.A : [],
-        B: Array.isArray(json.data && json.data.B) ? json.data.B : [],
-        C: Array.isArray(json.data && json.data.C) ? json.data.C : []
+        A: normalizeIngredients(json.data && json.data.A),
+        B: normalizeIngredients(json.data && json.data.B),
+        C: normalizeIngredients(json.data && json.data.C)
       };
       masterLoaded = true;
-      renderMasterTable();
+      if (!silent) renderMasterTable();
+      renderCostSummary(state.schedule);
     } catch (e) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="4">取得失敗: ${escapeAttr(e.message)}</td></tr>`;
+      if (silent) {
+        console.warn('マスターの先読みに失敗:', e);
+      } else {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="8">取得失敗: ${escapeAttr(e.message)}</td></tr>`;
+      }
     }
   }
 
@@ -763,6 +1053,9 @@
     dateInput.max = todayStr();
     dateInput.value = todayStr();
     state.productionDate = dateInput.value;
+
+    // 原材料費を表示するため、マスターを裏で先読みする(失敗しても画面は動く)
+    loadMasterFromGas(true);
 
     // パターン切替
     document.querySelectorAll('.pattern-btn').forEach(btn => {
@@ -876,20 +1169,24 @@
       });
     });
 
-    // マスター編集(input)
+    // マスター編集(input)。数値欄・文字欄それぞれを state に反映し、原価を再計算する
+    const NUM_FIELDS  = ['amount', 'purchaseQty', 'purchasePrice'];
+    const TEXT_FIELDS = ['name', 'unit', 'purchaseUnit'];  // 単位は自由入力(datalist で補完)
     const tbody = document.getElementById('master-tbody');
     tbody.addEventListener('input', (e) => {
       const idx = parseInt(e.target.dataset.index, 10);
       const field = e.target.dataset.field;
       if (isNaN(idx) || !field) return;
-      if (field === 'amount') {
-        master[currentMasterTab][idx].amount = parseFloat(e.target.value) || 0;
-      } else if (field === 'name') {
-        master[currentMasterTab][idx].name = e.target.value;
-      } else if (field === 'unit') {
-        // 単位は自由入力(プリセット候補は datalist で補完)
-        master[currentMasterTab][idx].unit = e.target.value;
+      const item = master[currentMasterTab][idx];
+      if (!item) return;
+      if (NUM_FIELDS.includes(field)) {
+        item[field] = parseFloat(e.target.value) || 0;
+      } else if (TEXT_FIELDS.includes(field)) {
+        item[field] = e.target.value;
+      } else {
+        return;
       }
+      refreshCosts();
     });
 
     // 削除ボタン
@@ -902,7 +1199,10 @@
 
     // 行追加
     document.getElementById('btn-add-row').addEventListener('click', () => {
-      master[currentMasterTab].push({ name: '', amount: 0, unit: 'kg' });
+      master[currentMasterTab].push({
+        name: '', amount: 0, unit: 'kg',
+        purchaseQty: 0, purchaseUnit: '', purchasePrice: 0
+      });
       renderMasterTable();
     });
 
@@ -925,6 +1225,9 @@
         if (!json.success) throw new Error(json.error || '保存に失敗しました');
         // 保存後は GAS の値を真として再読込
         master[tareType] = clone(ingredients);
+        // 名前が空の行は保存対象外なので、表と原価表示を保存後の内容に合わせ直す
+        if (tareType === currentMasterTab) renderMasterTable();
+        renderCostSummary(state.schedule);
         alert(tareType + 'タレのマスターを保存しました(' + (json.count != null ? json.count : ingredients.length) + ' 件)');
       } catch (e) {
         alert('保存失敗: ' + e.message);

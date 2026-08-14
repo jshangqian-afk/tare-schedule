@@ -40,18 +40,45 @@ function doPost(e) {
 // 原材料マスター
 // ============================================================
 
+// 原材料マスターの列定義。
+// F〜H(入荷量 / 入荷単位 / 入荷金額)は原価計算のために後から追加した列。
+// 既存データの列位置を動かさないよう、最終更新日の後ろに足している。
+const MASTER_HEADERS = [
+  'タレ種類', '原材料名', '1バッチ使用量', '単位', '最終更新日',
+  '入荷量', '入荷単位', '入荷金額(税抜)'
+];
+
+/**
+ * 原材料マスターに原価計算用の列が無ければ追加し、ヘッダーを設定する。
+ * 既存データはそのまま。列数(読み書きに使う幅)を返す。
+ */
+function ensureMasterColumns(sheet) {
+  const need = MASTER_HEADERS.length;
+  const max = sheet.getMaxColumns();
+  if (max < need) {
+    sheet.insertColumnsAfter(max, need - max);
+  }
+  const headers = sheet.getRange(1, 6, 1, 3).getValues()[0];
+  const expected = MASTER_HEADERS.slice(5);
+  if (expected.some((h, i) => String(headers[i]) !== h)) {
+    sheet.getRange(1, 6, 1, 3).setValues([expected]).setFontWeight('bold');
+  }
+  return need;
+}
+
 /**
  * 全タレ種類の原材料マスターを取得。
  * レスポンス: { success: true, data: { A: [...], B: [...], C: [...] } }
  */
 function getMaster() {
   const sheet = getSheet('原材料マスター');
+  const width = ensureMasterColumns(sheet);
   const lastRow = sheet.getLastRow();
   const data = { A: [], B: [], C: [] };
 
   if (lastRow < 2) return successResponse({ data: data });
 
-  const rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  const rows = sheet.getRange(2, 1, lastRow - 1, width).getValues();
   rows.forEach(row => {
     const [tareType, name, amount, unit] = row;
     if (!tareType || !data[tareType]) return;
@@ -59,7 +86,10 @@ function getMaster() {
     data[tareType].push({
       name: String(name),
       amount: Number(amount) || 0,
-      unit: String(unit || '')
+      unit: String(unit || ''),
+      purchaseQty:   Number(row[5]) || 0,
+      purchaseUnit:  String(row[6] || ''),
+      purchasePrice: Number(row[7]) || 0
     });
   });
 
@@ -71,7 +101,8 @@ function getMaster() {
 
 /**
  * 指定タレ種類の原材料マスターを全置換。
- * body: { action, tareType: 'A', ingredients: [{ name, amount, unit }, ...] }
+ * body: { action, tareType: 'A',
+ *         ingredients: [{ name, amount, unit, purchaseQty, purchaseUnit, purchasePrice }, ...] }
  */
 function saveMaster(body) {
   const tareType = body.tareType;
@@ -82,6 +113,7 @@ function saveMaster(body) {
   }
 
   const sheet = getSheet('原材料マスター');
+  const width = ensureMasterColumns(sheet);
   const lastRow = sheet.getLastRow();
   const now = new Date();
   const timestamp = formatTimestamp(now);
@@ -103,9 +135,12 @@ function saveMaster(body) {
       String(ing.name || ''),
       Number(ing.amount) || 0,
       String(ing.unit || ''),
-      timestamp
+      timestamp,
+      Number(ing.purchaseQty) || 0,
+      String(ing.purchaseUnit || ''),
+      Number(ing.purchasePrice) || 0
     ]);
-    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 5).setValues(newRows);
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, width).setValues(newRows);
   }
 
   return successResponse({ tareType: tareType, count: ingredients.length });
