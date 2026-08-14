@@ -408,48 +408,6 @@
       margin-bottom: 10px;
     }
 
-    /* メイン画面の原価サマリー */
-    .cost-summary {
-      background: white;
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-      padding: 14px 20px;
-      margin-top: 16px;
-      max-width: 520px;
-    }
-
-    .cost-summary h2 {
-      font-size: 16px;
-      margin-bottom: 8px;
-    }
-
-    .cost-summary table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    .cost-summary td {
-      padding: 6px 0;
-      font-size: 16px;
-    }
-
-    .cost-summary td.amount {
-      text-align: right;
-      font-size: 18px;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .cost-summary tr.total td {
-      border-top: 2px solid var(--color-border);
-      padding-top: 10px;
-      font-size: 18px;
-    }
-
-    .cost-summary tr.total td.amount {
-      font-size: 24px;
-    }
-
     .btn-small {
       min-height: 36px;
       padding: 6px 14px;
@@ -520,8 +478,6 @@
   </section>
 
   <section id="schedule-section" class="schedule-section"></section>
-
-  <section id="cost-summary" class="cost-summary" style="display:none"></section>
 </div>
 
 <!-- マスター管理画面 -->
@@ -751,7 +707,6 @@
 
   function renderSchedule(sched) {
     const section = document.getElementById('schedule-section');
-    renderCostSummary(sched);
     if (!sched) {
       section.innerHTML = '';
       return;
@@ -793,38 +748,6 @@
         <table class="schedule-table">${rows}</table>
       </div>
     `;
-  }
-
-  // メイン画面: 表示中のスケジュールに対する原材料費(税抜)を表示
-  function renderCostSummary(sched) {
-    const box = document.getElementById('cost-summary');
-    if (!box) return;
-    if (!sched || !masterLoaded) {
-      box.style.display = 'none';
-      box.innerHTML = '';
-      return;
-    }
-
-    const labels = sched.pattern === '①' ? ['1回目'] : ['1回目', '2回目'];
-    let total = 0;
-    let hasNote = false;
-    const rows = labels.map((label, i) => {
-      const type = sched.tareTypes[i] || 'A';
-      const sum  = calcTotalCost(master[type]);
-      total += sum.total;
-      if (sum.missing || sum.mismatch) hasNote = true;
-      return `<tr><td>${label}(${escapeAttr(type)}タレ)</td><td class="amount">${formatYen(sum.total)}</td></tr>`;
-    }).join('');
-
-    box.innerHTML = `
-      <h2>原材料費(税抜)</h2>
-      <table>
-        ${rows}
-        <tr class="total"><td>合計</td><td class="amount">${formatYen(total)}</td></tr>
-      </table>
-      ${hasNote ? '<span class="cost-note">※ 単価が未入力、または単位を換算できない原材料は含んでいません(マスター管理画面で確認してください)</span>' : ''}
-    `;
-    box.style.display = '';
   }
 
   // 現在時刻表示(1分ごとに更新)
@@ -1000,13 +923,10 @@
     }));
   }
 
-  // GAS からマスターを取得して画面を更新。
-  // silent = true のときはマスター表を触らず、原価表示用に裏で読み込むだけ。
-  async function loadMasterFromGas(silent) {
+  // GAS からマスターを取得して画面を更新
+  async function loadMasterFromGas() {
     const tbody = document.getElementById('master-tbody');
-    if (!silent) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="7">読み込み中...</td></tr>`;
-    }
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">読み込み中...</td></tr>`;
     try {
       const json = await apiGet('getMaster');
       if (!json.success) throw new Error(json.error || '取得に失敗しました');
@@ -1016,14 +936,9 @@
         C: normalizeIngredients(json.data && json.data.C)
       };
       masterLoaded = true;
-      if (!silent) renderMasterTable();
-      renderCostSummary(state.schedule);
+      renderMasterTable();
     } catch (e) {
-      if (silent) {
-        console.warn('マスターの先読みに失敗:', e);
-      } else {
-        tbody.innerHTML = `<tr class="empty-row"><td colspan="7">取得失敗: ${escapeAttr(e.message)}</td></tr>`;
-      }
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="7">取得失敗: ${escapeAttr(e.message)}</td></tr>`;
     }
   }
 
@@ -1041,9 +956,6 @@
     dateInput.max = todayStr();
     dateInput.value = todayStr();
     state.productionDate = dateInput.value;
-
-    // 原材料費を表示するため、マスターを裏で先読みする(失敗しても画面は動く)
-    loadMasterFromGas(true);
 
     // パターン切替
     document.querySelectorAll('.pattern-btn').forEach(btn => {
@@ -1212,9 +1124,8 @@
         if (!json.success) throw new Error(json.error || '保存に失敗しました');
         // 保存後は GAS の値を真として再読込
         master[tareType] = clone(ingredients);
-        // 名前が空の行は保存対象外なので、表と原価表示を保存後の内容に合わせ直す
+        // 名前が空の行は保存対象外なので、表を保存後の内容に合わせ直す
         if (tareType === currentMasterTab) renderMasterTable();
-        renderCostSummary(state.schedule);
         alert(tareType + 'タレのマスターを保存しました(' + (json.count != null ? json.count : ingredients.length) + ' 件)');
       } catch (e) {
         alert('保存失敗: ' + e.message);
