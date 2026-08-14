@@ -41,11 +41,11 @@ function doPost(e) {
 // ============================================================
 
 // 原材料マスターの列定義。
-// F〜H(入荷量 / 入荷単位 / 入荷金額)は原価計算のために後から追加した列。
+// F〜G(単価 / 単価の単位)は原価計算のために後から追加した列。
 // 既存データの列位置を動かさないよう、最終更新日の後ろに足している。
 const MASTER_HEADERS = [
   'タレ種類', '原材料名', '1バッチ使用量', '単位', '最終更新日',
-  '入荷量', '入荷単位', '入荷金額(税抜)'
+  '単価(税抜)', '単価の単位'
 ];
 
 /**
@@ -58,10 +58,14 @@ function ensureMasterColumns(sheet) {
   if (max < need) {
     sheet.insertColumnsAfter(max, need - max);
   }
-  const headers = sheet.getRange(1, 6, 1, 3).getValues()[0];
+  const headers = sheet.getRange(1, 6, 1, 2).getValues()[0];
   const expected = MASTER_HEADERS.slice(5);
   if (expected.some((h, i) => String(headers[i]) !== h)) {
-    sheet.getRange(1, 6, 1, 3).setValues([expected]).setFontWeight('bold');
+    sheet.getRange(1, 6, 1, 2).setValues([expected]).setFontWeight('bold');
+  }
+  // 一時的に「入荷量 / 入荷単位 / 入荷金額」の3列構成だった名残(H列)を掃除する
+  if (max >= 8 && String(sheet.getRange(1, 8).getValue()) === '入荷金額(税抜)') {
+    sheet.getRange(1, 8).clearContent();
   }
   return need;
 }
@@ -87,9 +91,8 @@ function getMaster() {
       name: String(name),
       amount: Number(amount) || 0,
       unit: String(unit || ''),
-      purchaseQty:   Number(row[5]) || 0,
-      purchaseUnit:  String(row[6] || ''),
-      purchasePrice: Number(row[7]) || 0
+      unitPrice: Number(row[5]) || 0,
+      priceUnit: String(row[6] || '')
     });
   });
 
@@ -102,7 +105,7 @@ function getMaster() {
 /**
  * 指定タレ種類の原材料マスターを全置換。
  * body: { action, tareType: 'A',
- *         ingredients: [{ name, amount, unit, purchaseQty, purchaseUnit, purchasePrice }, ...] }
+ *         ingredients: [{ name, amount, unit, unitPrice, priceUnit }, ...] }
  */
 function saveMaster(body) {
   const tareType = body.tareType;
@@ -136,9 +139,8 @@ function saveMaster(body) {
       Number(ing.amount) || 0,
       String(ing.unit || ''),
       timestamp,
-      Number(ing.purchaseQty) || 0,
-      String(ing.purchaseUnit || ''),
-      Number(ing.purchasePrice) || 0
+      Number(ing.unitPrice) || 0,
+      String(ing.priceUnit || '')
     ]);
     sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, width).setValues(newRows);
   }
