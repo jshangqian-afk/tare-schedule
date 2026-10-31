@@ -81,6 +81,32 @@ function purgeProductionIds(ids) {
   return result;
 }
 
+/**
+ * 二重記録(①で押したあと②に切り替えて押し直したもの)を取り消す。GAS エディタから1回だけ実行。
+ * 対象の行が想定(パターン・タレ)と違えば、何も消さずに止まる。
+ */
+function purgeOneDuplicate_(id, pattern, tare) {
+  const prod = getSheet('製造実績');
+  const rows = prod.getRange(2, 1, prod.getLastRow() - 1, 5).getValues();
+  const hit = rows.filter(r => String(r[1]).trim() === id);
+  if (hit.length !== 1 || String(hit[0][2]) !== pattern || String(hit[0][4]) !== tare) {
+    throw new Error(id + ' が想定と違うため中止しました: ' + JSON.stringify(hit));
+  }
+  const result = purgeProductionIds([id]);
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+/** 2026-10-26:実際は ② C・A の2回。① C は重複(2026-10-28 実行済み)。 */
+function purge20261026Duplicate() {
+  return purgeOneDuplicate_('20261026-001', '①', 'C');
+}
+
+/** 2026-10-28:実際は ② B・A の2回。① B は重複。 */
+function purge20261028Duplicate() {
+  return purgeOneDuplicate_('20261028-001', '①', 'B');
+}
+
 /** 原材料マスターをタレ種類×原材料名で一意化(最初の1件を残す)。 */
 function dedupeMasterSheet_() {
   const sheet = getSheet('原材料マスター');
