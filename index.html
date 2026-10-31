@@ -204,6 +204,119 @@
     .btn-success   { background: var(--color-button-success); }
     .btn-danger    { background: var(--color-button-danger); }
     .btn-secondary { background: var(--color-button-secondary); }
+    .btn:disabled  { opacity: 0.5; cursor: default; }
+
+    /* リセットは製造開始から離して右端に置く(押し間違い防止) */
+    .actions .btn-push-right { margin-left: auto; }
+
+    /* === 画面内ダイアログ(confirm/alert の代わり) === */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(17, 24, 39, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 24px;
+    }
+    .overlay[hidden] { display: none; }
+
+    .dialog {
+      background: white;
+      border-radius: 14px;
+      width: 100%;
+      max-width: 600px;
+      padding: 28px 32px 24px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+    }
+    .dialog-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 18px;
+    }
+    .dialog-title.warn  { color: #92400E; }
+    .dialog-title.error { color: #B91C1C; }
+    .dialog-title.done  { color: #047857; }
+    .dialog-body { font-size: 18px; line-height: 1.6; }
+    .dialog-body p + p { margin-top: 8px; }
+
+    .dialog-rows {
+      display: grid;
+      grid-template-columns: 7em 1fr;
+      row-gap: 12px;
+      align-items: center;
+      font-size: 20px;
+    }
+    .dialog-rows dt { color: #6B7280; font-size: 17px; }
+    .dialog-rows dd { font-weight: 700; }
+
+    .tare-chips { display: flex; gap: 10px; flex-wrap: wrap; }
+    .tare-chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .tare-chip small { font-size: 14px; font-weight: 600; }
+    .tare-chip.batch1 { background: var(--color-batch1-bg); color: var(--color-batch1-text); }
+    .tare-chip.batch2 { background: var(--color-batch2-bg); color: var(--color-batch2-text); }
+
+    .dialog-note {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-size: 16px;
+      line-height: 1.5;
+      background: var(--color-bg);
+      color: #4B5563;
+    }
+    .dialog-note.warn { background: var(--color-simultaneous); color: #92400E; font-weight: 600; }
+
+    .dialog-ids {
+      font-size: 22px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      margin-top: 6px;
+    }
+
+    .dialog-actions {
+      display: flex;
+      gap: 24px;
+      justify-content: flex-end;
+      margin-top: 26px;
+    }
+    .dialog-actions .btn { min-height: 64px; min-width: 180px; font-size: 20px; }
+
+    /* 送信中:画面全体を覆って、終わるまで何も押せないようにする */
+    .saving-box {
+      background: white;
+      border-radius: 14px;
+      padding: 36px 56px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      text-align: center;
+    }
+    .saving-box .saving-title { font-size: 26px; font-weight: 700; }
+    .saving-box .saving-sub   { font-size: 17px; color: #6B7280; }
+    .spinner {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 8px solid #D1FAE5;
+      border-top-color: var(--color-button-success);
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .spinner { animation: pulse 1.6s ease-in-out infinite; }
+      @keyframes pulse { 50% { opacity: 0.35; } }
+    }
 
     /* スケジュール表示 */
     .schedule-section:empty {
@@ -472,8 +585,8 @@
     <div class="actions">
       <button id="btn-create" class="btn btn-primary">スケジュール作成</button>
       <button id="btn-start" class="btn btn-success">製造開始</button>
-      <button id="btn-reset" class="btn btn-danger">リセット</button>
       <button id="btn-master" class="btn btn-secondary">マスター管理画面へ</button>
+      <button id="btn-reset" class="btn btn-danger btn-push-right">リセット</button>
     </div>
   </section>
 
@@ -537,6 +650,24 @@
   </div>
 </div>
 
+<!-- 確認・お知らせ用ダイアログ -->
+<div id="dialog-overlay" class="overlay" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <div id="dialog-title" class="dialog-title"></div>
+    <div id="dialog-body" class="dialog-body"></div>
+    <div id="dialog-actions" class="dialog-actions"></div>
+  </div>
+</div>
+
+<!-- 送信中 -->
+<div id="saving-overlay" class="overlay" hidden>
+  <div class="saving-box" role="status" aria-live="polite">
+    <div class="spinner"></div>
+    <div class="saving-title">記録しています…</div>
+    <div class="saving-sub">終わるまで、画面にさわらずにお待ちください</div>
+  </div>
+</div>
+
 <script>
   'use strict';
 
@@ -555,7 +686,8 @@
     pattern:   'tare_pattern',
     startTime: 'tare_startTime',
     tareTypes: 'tare_types',
-    schedule:  'tare_schedule'
+    schedule:  'tare_schedule',
+    submitted: 'tare_submitted'   // 記録済みの内容 [{key, ids}](二度押しの警告用)
   };
 
   // GAS WebApp URL (Phase 2)
@@ -756,6 +888,85 @@
     const h = String(now.getHours()).padStart(2, '0');
     const m = String(now.getMinutes()).padStart(2, '0');
     document.getElementById('current-time-display').textContent = `${h}:${m}`;
+
+    // 開いたまま日付が変わったら、製造日を新しい「当日」にする
+    const dateInput = document.getElementById('production-date');
+    if (dateInput.max && dateInput.max !== todayStr()) {
+      const wasToday = dateInput.value === dateInput.max;
+      dateInput.max = todayStr();
+      if (wasToday) dateInput.value = todayStr();
+    }
+  }
+
+  // 画面内ダイアログを出し、押されたボタンの value を返す(confirm/alert の代わり)
+  function showDialog({ title, html, tone = '', buttons }) {
+    const overlay = document.getElementById('dialog-overlay');
+    const titleEl = document.getElementById('dialog-title');
+    const actions = document.getElementById('dialog-actions');
+    titleEl.textContent = title;
+    titleEl.className = 'dialog-title' + (tone ? ' ' + tone : '');
+    document.getElementById('dialog-body').innerHTML = html || '';
+    const list = buttons || [{ label: '閉じる', value: true, cls: 'btn-primary' }];
+    actions.innerHTML = '';
+    return new Promise(resolve => {
+      list.forEach(b => {
+        const el = document.createElement('button');
+        el.className = 'btn ' + b.cls;
+        el.textContent = b.label;
+        el.addEventListener('click', () => {
+          overlay.hidden = true;
+          resolve(b.value);
+        });
+        actions.appendChild(el);
+      });
+      overlay.hidden = false;
+      actions.lastChild.focus();
+    });
+  }
+
+  function showSaving(on) {
+    document.getElementById('saving-overlay').hidden = !on;
+  }
+
+  // 確認ダイアログに出す「何を記録するか」
+  function startSummaryHtml() {
+    const dateLabel = state.productionDate === todayStr()
+      ? state.productionDate + '(本日)'
+      : state.productionDate + '(過去日付)';
+    const chips = state.tareTypes.map((t, i) => {
+      const order = state.pattern === '②' ? '<small>' + (i + 1) + '回目</small>' : '';
+      return '<span class="tare-chip batch' + (i + 1) + '">' + order + escapeAttr(t) + 'タレ</span>';
+    }).join('');
+    return '<dl class="dialog-rows">'
+      + '<dt>製造日</dt><dd>' + escapeAttr(dateLabel) + '</dd>'
+      + '<dt>パターン</dt><dd>' + (state.pattern === '②' ? '② 2回連続(2回分を記録)' : '① 1回(1回分を記録)') + '</dd>'
+      + '<dt>タレ</dt><dd><div class="tare-chips">' + chips + '</div></dd>'
+      + '<dt>スタート</dt><dd>' + escapeAttr(state.startTime) + '</dd>'
+      + '</dl>';
+  }
+
+  // 製造の内容を1つの文字列にする(時刻表と入力の一致、二度押しの判定に使う)
+  function inputKey(date, pattern, startTime, tareTypes) {
+    return [date, pattern, startTime, tareTypes.join(',')].join('|');
+  }
+
+  function loadSubmitted() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEYS.submitted) || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // 記録済みの内容を残す(当日分と過去日付の記録だけで十分なので直近20件)
+  function rememberSubmitted(key, ids) {
+    try {
+      const list = loadSubmitted().filter(s => s.key !== key);
+      list.push({ key, ids });
+      localStorage.setItem(STORAGE_KEYS.submitted, JSON.stringify(list.slice(-20)));
+    } catch (e) {
+      console.warn('localStorage 保存に失敗:', e);
+    }
   }
 
   // === localStorage ===
@@ -792,7 +1003,9 @@
   }
 
   function clearStorage() {
-    Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
+    // 記録済みの内容はリセットしても残す(二度押しの警告を消さない)
+    Object.values(STORAGE_KEYS).filter(k => k !== STORAGE_KEYS.submitted)
+      .forEach(k => localStorage.removeItem(k));
   }
 
   // 状態をUIに反映
@@ -989,6 +1202,9 @@
         return;
       }
       state.schedule = calculateSchedule(state.startTime, state.pattern, state.tareTypes);
+      // 製造開始のときに、表示中の時刻表と入力が同じか・今日作ったものかを確かめる
+      state.schedule.createdOn = todayStr();
+      state.schedule.inputKey  = inputKey(state.productionDate, state.pattern, state.startTime, state.tareTypes);
       renderSchedule(state.schedule);
       saveState();
     });
@@ -997,39 +1213,83 @@
     document.getElementById('btn-start').addEventListener('click', async () => {
       collectInput();
       if (!state.schedule) {
-        alert('先に「スケジュール作成」を押してください。');
+        await showDialog({ title: '時刻表がありません', tone: 'warn',
+          html: '<p>先に「スケジュール作成」を押してください。</p>' });
         return;
       }
-      const dateLabel = state.productionDate === todayStr()
-        ? state.productionDate + '(本日)'
-        : state.productionDate + '(過去日付)';
-      if (!confirm('製造開始を記録しますか?\n製造日: ' + dateLabel + '\nスプレッドシートに製造実績と原材料出庫が追記されます。')) return;
+      if (state.schedule.createdOn !== todayStr()) {
+        await showDialog({ title: '前の日の時刻表です', tone: 'warn',
+          html: '<p>内容を確かめて、もう一度「スケジュール作成」を押してください。</p>' });
+        return;
+      }
+      const key = inputKey(state.productionDate, state.pattern, state.startTime, state.tareTypes);
+      if (state.schedule.inputKey !== key) {
+        await showDialog({ title: '時刻表と入力が違います', tone: 'warn',
+          html: '<p>時刻表を作ったあとに、製造日・タレ・時刻のどれかが変わっています。</p>'
+              + '<p>もう一度「スケジュール作成」を押してください。</p>' });
+        return;
+      }
+
+      const already = loadSubmitted().find(s => s.key === key);
+      const note = already
+        ? '<div class="dialog-note warn">この端末で、同じ内容をすでに記録しています(製造ID: '
+          + escapeAttr(already.ids.join(', ')) + ')。2回炊いたとき以外は「やめる」を押してください。</div>'
+        : '<div class="dialog-note">記録すると、製造実績と原材料出庫に追記されます。</div>';
+      const ok = await showDialog({
+        title: already ? '同じ内容をもう一度記録しますか?' : 'この内容で製造開始を記録しますか?',
+        tone: already ? 'warn' : '',
+        html: startSummaryHtml() + note,
+        buttons: [
+          { label: 'やめる', value: false, cls: 'btn-secondary' },
+          { label: already ? 'もう一度記録する' : '記録する', value: true, cls: 'btn-success' }
+        ]
+      });
+      if (!ok) return;
 
       const btn = document.getElementById('btn-start');
-      const orig = btn.textContent;
       btn.disabled = true;
-      btn.textContent = '送信中...';
+      showSaving(true);
       try {
-        const json = await apiPost({
-          action:    'saveProduction',
-          productionDate: state.productionDate,
-          pattern:   state.pattern,
-          startTime: state.startTime,
-          tareTypes: state.tareTypes
-        });
+        const [json] = await Promise.all([
+          apiPost({
+            action:    'saveProduction',
+            productionDate: state.productionDate,
+            pattern:   state.pattern,
+            startTime: state.startTime,
+            tareTypes: state.tareTypes
+          }),
+          // 一瞬で消えると記録されたか分からないので、最低0.8秒は表示する
+          new Promise(r => setTimeout(r, 800))
+        ]);
         if (!json.success) throw new Error(json.error || '保存に失敗しました');
-        alert('製造開始を記録しました\n製造ID: ' + (json.productionIds || []).join(', '));
+        const ids = json.productionIds || [];
+        rememberSubmitted(key, ids);
+        showSaving(false);
+        await showDialog({ title: '記録しました', tone: 'done',
+          html: '<p>製造ID</p><div class="dialog-ids">' + escapeAttr(ids.join(' / ')) + '</div>' });
       } catch (e) {
-        alert('送信失敗: ' + e.message);
+        showSaving(false);
+        await showDialog({ title: '記録できませんでした', tone: 'error',
+          html: '<p>' + escapeAttr(e.message) + '</p>'
+              + '<div class="dialog-note">通信の途中で止まった場合、記録されていることがあります。'
+              + 'もう一度押す前に、製造実績のシートを確認してください。</div>' });
       } finally {
+        showSaving(false);
         btn.disabled = false;
-        btn.textContent = orig;
       }
     });
 
     // リセット
-    document.getElementById('btn-reset').addEventListener('click', () => {
-      if (!confirm('入力と表示をすべてクリアしますか?')) return;
+    document.getElementById('btn-reset').addEventListener('click', async () => {
+      const ok = await showDialog({
+        title: '入力と表示をすべてクリアしますか?',
+        html: '<p>パターン・タレ・時刻と、表示中の時刻表が消えます。記録済みのデータは消えません。</p>',
+        buttons: [
+          { label: 'やめる', value: false, cls: 'btn-secondary' },
+          { label: 'クリアする', value: true, cls: 'btn-danger' }
+        ]
+      });
+      if (!ok) return;
       clearStorage();
       state = {
         pattern:   '①',
